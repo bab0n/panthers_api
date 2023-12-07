@@ -7,6 +7,7 @@ import requests
 from requests.adapters import HTTPAdapter
 import time
 from collections import Counter
+import statistics
 
 
 api_blueprint = Blueprint('api', __name__, url_prefix='/api/v1')
@@ -486,3 +487,131 @@ class Subs(Resource):
         user.upd_date = datetime.datetime.now().isoformat()
         db.session.commit()
         return {'succes': True}, 200
+
+
+cards_ns = api.namespace('card_analiz')
+api.add_namespace(cards_ns)
+
+
+@cards_ns.route('/')
+class CardAnaliz(Resource):
+    def get_info(self, id: int):
+        for i in range(1, 20):
+            try:
+                r = requests.get(
+                    f'https://basket-{"0" if i < 10 else ""}{i}.wb.ru/vol{str(id//100000)}/part{str(id//1000)}/{id}/info/ru/card.json'
+                )
+            except Exception:
+                return None
+            if r.status_code == 200:
+                return r
+        return None
+
+    def get_stats(self, nmId):
+        r = requests.get(
+            f'https://card.wb.ru/cards/v1/detail?appType=1&curr=rub&dest=-1257786&spp=27&nm={nmId}'
+        )
+        return r if r.status_code == 200 else None
+
+    def get(self):
+        parser = reqparse.RequestParser()
+        parser.add_argument('nmId', type=int, required=True)
+        parser.add_argument('method', type=str, required=True)
+        parser.add_argument('keyword', type=str)
+        args = parser.parse_args()
+        inf = self.get_info(args['nmId'])
+        if inf is None:
+            return {
+                'succes': False,
+                'error': 'Не удалось получить информацию о товаре. Убедитесь что ввели корректный артикул или попробуйте повторить позже',
+            }, 200
+        inf = inf.json()
+        stats = self.get_stats(inf['nm_id'])
+        if stats is None:
+            return {
+                'succes': False,
+                'error': 'Не удалось получить информацию о товаре. Повторите попытку позже',
+            }, 200
+        stats = stats.json()
+        if len(stats['data']['products']) < 1:
+            return {
+                'succes': False,
+                'error': 'Не удалось получить информацию о товаре. Повторите попытку позже',
+            }, 200
+        match args['method']:
+            case 'feedbacks':
+                rev = stats['data']['products'][0]['reviewRating']
+                value = stats['data']['products'][0]['feedbacks']
+                rate = [rev for _ in range(value)]
+                counter = 0
+                needet_rate = 4.9
+                while statistics.mean(rate) < needet_rate:
+                    if len(rate) < 500:
+                        rate.append(5)
+                        counter += 1
+                    elif len(rate) < 1000:
+                        rate.extend([5 for _ in range(4)])
+                        counter += 4
+                    else:
+                        rate.extend([5 for _ in range(10)])
+                        counter += 10
+                return {
+                    'succes': True,
+                    'count': counter,
+                    'name': stats['data']['products'][0]['name'],
+                    'current_rate': rev,
+                    'current_value': value,
+                    'price': stats['data']['products'][0]['salePriceU'] / 100,
+                    'brand': stats['data']['products'][0]['brand'],
+                }, 200
+            case 'card':
+                res = {
+                    'name': f"{inf['imt_name']} {inf['vendor_code']}",
+                    'sub_category': inf['subj_name'],
+                    'category': inf['subj_root_name'],
+                    'desc': inf['description'],
+                    'options': inf['options'],
+                    'variations': len(inf['colors']),
+                }
+                if not inf.get('compositions') is None:
+                    res['components'] = inf['compositions']
+                return {
+                    'succes': True,
+                    'res': res,
+                }, 200
+            case 'keyword':
+                data = {}
+                item_id = args['nmId']
+                query = args['keyword']
+                page = 1
+                try:
+                    while True:
+                        url = f'https://search.wb.ru/exactmatch/ru/common/v4/search?TestGroup=sim_goods_rec_infra&TestID=218&appType=1&curr=rub&dest=-1257786&page={page}&query={query}&regions=80,38,83,4,64,33,68,70,30,40,86,75,69,22,1,31,66,110,48,71,114&resultset=catalog&sort=popular&spp=0&suppressSpellcheck=false'
+                        response = requests.get(url=url)
+                        ids = response.json()
+                        ids = ids["data"]["products"]
+                        for i in range(len(ids)):
+                            if item_id == str(ids[i]["id"]):
+                                data["pos"] = i + 1 + (page - 1) * 100
+                                break
+                        page += 1
+                except Exception:
+                    try:
+                        if data["pos"] > 0:
+                            return {
+                                'succes': True,
+                                'pos': data['pos'],
+                                'pages': page,
+                            }, 200
+                    except Exception:
+                        return {
+                            'succes': False,
+                            'error': 'Unfoundet',
+                            'pages': page,
+                        }, 200
+                return {'succes': True}, 200
+            case _:
+                return {
+                    'succes': False,
+                    'error': 'Неверно указан метод',
+                }, 200
