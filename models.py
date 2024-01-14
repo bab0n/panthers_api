@@ -20,6 +20,7 @@ class User(db.Model):  # Пользователь и его настройки
     star5 = db.Column(db.Text, nullable=True)
     balance = db.Column(db.Integer, nullable=True)
     subscribe = db.Column(db.Integer, nullable=True)
+    tarif = db.Column(db.Text, nullable=True)
     upd_date = db.Column(db.Text, nullable=True)
 
     def __repr__(self):
@@ -115,6 +116,48 @@ class Feedbacks(db.Model):
 class Tarifs(db.Model):
     title = db.Column(db.Text, primary_key=True)
     describe = db.Column(db.Text, nullable=True)
-    days = db.Column(db.Integer, nullable=True)
-    days_text = db.Column(db.Text, nullable=True)
-    price = db.Column(db.Integer, nullable=True)
+    access = db.Column(db.Text, nullable=True)
+    days = db.Column(db.Text, nullable=True)
+    price = db.Column(db.Text, nullable=True)
+    purchases = db.Column(db.Integer, nullable=True)
+    accessLevel = db.Column(db.Integer, nullable=True)
+
+    def getPrices(self) -> list:
+        return self.price.split(',')
+
+    def getDays(self) -> list:
+        return self.days.split(',')
+
+    def getDaysByPrice(self, price) -> str | None:
+        days = self.getDays()
+        prices = self.getPrices()
+        if price not in prices:
+            return None
+        else:
+            return days[prices.index(price)]
+
+
+class TarifsBuys(db.Model):
+    id = db.Column(db.Integer, autoincrement=True, primary_key=True)
+    user_id = db.Column(db.Integer, nullable=True)
+    tarif = db.Column(db.Text, nullable=True)
+    date = db.Column(db.Text, nullable=True)
+
+
+class Daily(db.Model):
+    id = db.Column(db.Integer, autoincrement=True, primary_key=True)
+    enable = db.Column(db.Boolean, nullable=True)
+    time = db.Column(db.Text, nullable=True)
+    orders = db.Column(db.Boolean, nullable=True)
+    sales = db.Column(db.Boolean, nullable=True)
+    returns = db.Column(db.Boolean, nullable=True)
+    cancels = db.Column(db.Boolean, nullable=True)
+    penaltys = db.Column(db.Boolean, nullable=True)
+    topOrders = db.Column(db.Boolean, nullable=True)
+    topBuys = db.Column(db.Boolean, nullable=True)
+
+
+class Promocode(db.Model):
+    text = db.Column(db.Text, primary_key=True)
+    activs = db.Column(db.Integer, nullable=True)
+    discount = db.Column(db.Integer, nullable=True)
